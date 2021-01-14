@@ -4,13 +4,6 @@ namespace WP2StaticAzure;
 
 class Controller {
     public function run() : void {
-        // add_action(
-        //     'admin_post_wp2static_zip_delete',
-        //     [ $this, 'deleteZip' ],
-        //     15,
-        //     1
-        // );
-
         add_action(
             'wp2static_deploy',
             [ $this, 'deploy' ],
@@ -18,14 +11,26 @@ class Controller {
             2
         );
 
-        // add_action(
-        //     'admin_menu',
-        //     [ $this, 'addOptionsPage' ],
-        //     15,
-        //     1
-        // );
+        add_filter(
+            'wp2static_add_menu_items',
+            [ 'WP2StaticAzure\Controller', 'addSubmenuPage' ]
+        );
 
-        add_filter( 'parent_file', [ $this, 'setActiveParentMenu' ] );
+        add_action(
+            'admin_post_wp2static_azure_save_options',
+            [ $this, 'saveOptionsFromUI' ],
+            15,
+            1
+        );
+
+        add_action(
+            'admin_menu',
+            [ $this, 'addOptionsPage' ],
+            15,
+            1
+        );
+
+        // add_filter( 'parent_file', [ $this, 'setActiveParentMenu' ] );
 
         do_action(
             'wp2static_register_addon',
@@ -44,11 +49,103 @@ class Controller {
         // }
     }
 
-    public static function renderAzurePage() : void {
-        
+    /**
+     *  Get all add-on options
+     *
+     *  @return mixed[] All options
+     */
+    public static function getOptions() : array {
+        global $wpdb;
+        $options = [];
+
+        $table_name = $wpdb->prefix . 'wp2static_addon_azure_options';
+
+        $rows = $wpdb->get_results( "SELECT * FROM $table_name" );
+
+        foreach ( $rows as $row ) {
+            $options[ $row->name ] = $row;
+        }
+
+        return $options;
     }
 
-    
+        /**
+     * Seed options
+     */
+    public static function seedOptions() : void {
+        global $wpdb;
+
+        $table_name = $wpdb->prefix . 'wp2static_addon_azure_options';
+
+        $query_string =
+            "INSERT INTO $table_name (name, value, label, description)
+            VALUES (%s, %s, %s, %s);";
+
+        $query = $wpdb->prepare(
+            $query_string,
+            'storageAccountName',
+            '',
+            'Azure Storage Account Name',
+            ''
+        );
+
+        $wpdb->query( $query );
+
+        $query = $wpdb->prepare(
+            $query_string,
+            'storageContainer',
+            '',
+            'Azure Blob Container',
+            ''
+        );
+
+        $wpdb->query( $query );
+
+        $query = $wpdb->prepare(
+            $query_string,
+            'storageFolder',
+            '',
+            'Folder in Container',
+            ''
+        );
+
+        $wpdb->query( $query );
+
+        $query = $wpdb->prepare(
+            $query_string,
+            'sasToken',
+            '',
+            'SAS (Shared Access Signature) token',
+            ''
+        );
+
+        $wpdb->query( $query );
+    }
+
+    /**
+     * Save options
+     *
+     * @param mixed $value value to save
+     */
+    public static function saveOption( string $name, $value ) : void {
+        global $wpdb;
+
+        $table_name = $wpdb->prefix . 'wp2static_addon_azure_options';
+
+        $query_string = "INSERT INTO $table_name (name, value) VALUES (%s, %s);";
+        $query = $wpdb->prepare( $query_string, $name, $value );
+
+        $wpdb->query( $query );
+    }
+
+
+    public static function renderAzurePage() : void {
+        $view = [];
+        $view['nonce_action'] = 'azure-azure-options';
+        $view['options'] = self::getOptions();
+
+        require_once __DIR__ . '/../views/azure-page.php';
+    }
 
     public function deleteZip( string $processed_site_path ) : void {
         
@@ -64,6 +161,32 @@ class Controller {
     }
 
     public static function activate_for_single_site() : void {
+        // initialize options DB
+        global $wpdb;
+
+        $table_name = $wpdb->prefix . 'wp2static_addon_azure_options';
+
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE $table_name (
+            id mediumint(9) NOT NULL AUTO_INCREMENT,
+            name VARCHAR(255) NOT NULL,
+            value VARCHAR(255) NOT NULL,
+            label VARCHAR(255) NULL,
+            description VARCHAR(255) NULL,
+            PRIMARY KEY  (id)
+        ) $charset_collate;";
+
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        dbDelta( $sql );
+
+        // check for seed data
+        // if deployment_url option doesn't exist, create:
+        $options = self::getOptions();
+
+        if ( ! isset( $options['storageAccountName'] ) ) {
+            self::seedOptions();
+        }
     }
 
     public static function deactivate_for_single_site() : void {
@@ -125,6 +248,50 @@ class Controller {
         return $submenu_pages;
     }
 
+    public static function saveOptionsFromUI() : void {
+        check_admin_referer( 'wp2static-azure-options' );
+
+        global $wpdb;
+
+        $table_name = $wpdb->prefix . 'wp2static_addon_azure_options';
+
+        $wpdb->update(
+            $table_name,
+            [ 'value' => sanitize_text_field( $_POST['storageAccountName'] ) ],
+            [ 'name' => 'storageAccountName' ]
+        );
+
+        $wpdb->update(
+            $table_name,
+            [ 'value' => sanitize_text_field( $_POST['storageContainer'] ) ],
+            [ 'name' => 'storageContainer' ]
+        );
+
+        $wpdb->update(
+            $table_name,
+            [ 'value' => sanitize_text_field( $_POST['storageFolder'] ) ],
+            [ 'name' => 'storageFolder' ]
+        );
+
+        $personal_access_token =
+            $_POST['sasToken'] ?
+            \WP2Static\CoreOptions::encrypt_decrypt(
+                'encrypt',
+                sanitize_text_field( $_POST['sasToken'] )
+            ) : '';
+        $wpdb->update(
+            $table_name,
+            [ 'value' => $personal_access_token ],
+            [ 'name' => 'sasToken' ]
+        );
+
+
+        wp_safe_redirect(
+            admin_url( 'admin.php?page=wp2static-addon-azure' )
+        );
+
+        exit;
+    }
     
     /**
      * Get option value

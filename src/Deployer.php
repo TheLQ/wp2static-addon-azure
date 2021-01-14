@@ -22,13 +22,6 @@ class Deployer {
         if ( ! is_dir( $processed_site_path ) ) {
             return;
         }
-
-        // required setings
-         // $site_id = Controller::getValue( 'siteID' );
-        // $access_token = \WP2Static\CoreOptions::encrypt_decrypt(
-        //     'decrypt',
-        //     Controller::getValue( 'accessToken' )
-        // );
         
 
         $iterator = new RecursiveIteratorIterator(
@@ -67,11 +60,12 @@ class Deployer {
         }
 
         // Required settings
-        $storageAccountName = "";
-        $storageContainer = '';
-        $storageFolder = "";
-        $sasToken = "";
-        require 'creds.php';
+        $storageAccountName = Controller::getValue('storageAccountName');
+        $storageContainer = Controller::getValue('storageContainer');;
+        $storageFolder = Controller::getValue('storageFolder');;
+        // TODO: encrypt
+        $sasToken = Controller::getValue('sasToken');;
+        // require 'creds.php';
 
         if ($storageFolder == null) {
             $storageFolder = "";
