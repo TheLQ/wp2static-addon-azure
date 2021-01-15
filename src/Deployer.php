@@ -152,7 +152,7 @@ class Deployer {
                         );
                     } else {
                         \WP2Static\WsLog::l(
-                            "PUT $remote_path failed!"
+                            "PUT $url failed!"
                         );
                     }
                     return;
@@ -173,10 +173,38 @@ class Deployer {
             }
         }
 
-        \WP2Static\WsLog::l(
-            "Azure deploy remaining." . print_r($azure_hashes, true)
-        );
-        
+        $isDelete = true;
+        if ($isDelete) {
+            foreach ($azure_hashes as $hash => $url) {
+                $url = "/$storageContainer/$url";
+                \WP2Static\WsLog::l(
+                    "DELETE destination missing from source $url "
+                );
+                $res = $client->request(
+                    'DELETE',
+                    "$url?$sasToken",
+                    [
+                        'http_errors' => false,
+                    ],
+                );
+                if ($res->getStatusCode() != 202) {
+                    if (WP_DEBUG) {
+                        \WP2Static\WsLog::l(
+                            "DELETE $url failed!" . print_r($res, true) . $res->getBody()
+                        );
+                    } else {
+                        \WP2Static\WsLog::l(
+                            "DELETE $url failed!"
+                        );
+                    }
+                    return;
+                }
+            }
+        } else {
+            \WP2Static\WsLog::l(
+                "Found " . sizeof($azure_hashes) . " Azure destination files missing from source, but delete from destination not enabled"
+            );
+        }
 
         \WP2Static\WsLog::l(
             "Azure deploy complete. $deployed deployed, $cache_skipped unchanged."
